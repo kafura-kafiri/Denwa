@@ -1,4 +1,6 @@
 from sukhoi import MinerBS4, core
+import json
+# convert price
 
 
 class GSMMiner(MinerBS4):
@@ -7,18 +9,24 @@ class GSMMiner(MinerBS4):
         self._last = last
 
     def run(self, dom):
-        _ = []
+        _ = {
+            'title': {
+                'en': '',
+                'fa': '',
+            },
+            'price': ''
+        }
         try:
             h1 = dom.find('h1', {'class': 'brand-name-english'}).text.strip()
-            _.append(h1)
+            _['title']['en'] = h1
         except: pass
         try:
             h2 = dom.find('h2', {'class': 'brand-name-farsi'}).text.strip()
-            _.append(h2)
+            _['title']['fa'] = h2
         except: pass
         try:
             span = dom.find('span', {'id': 'price-with-warranty'}).text.strip()
-            _.append(span)
+            _['price'] = span
         except: pass
         self.append(_)
 
@@ -48,5 +56,6 @@ def crawl(first, last):
 arr = crawl(26160, 26165)
 with open('models.txt', 'w+') as _file:
     for model in arr:
-        line = ', '.join(model) + '\n'
+        line = json.dumps(model, ensure_ascii=False) + '\n'
+        print(line)
         _file.write(line)

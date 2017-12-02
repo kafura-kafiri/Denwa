@@ -17,6 +17,7 @@ bot.
 '503798742:AAHzfg7uqG8z6RU1p0C3ktRf0uPO2FNMb4Q'
 #contact_keyboard = telegram.KeyboardButton(text="send_contact", request_contact=True)
 """
+from search import search
 from config import ObjectId, users, pr
 from ast import literal_eval
 import telegram
@@ -62,7 +63,14 @@ def req(bot, update, user_data):
     if 'location' not in user_data:
         user_data['redirect'] = req
         return location_get(bot, update, user_data)
-    update.message.reply_text('this is the result you see !!!')
+    result = search(text, 1, 5)
+    for idx, model in enumerate(result):
+        keyboard = [[telegram.InlineKeyboardButton(model['title']['compact'], callback_data=str(model['_id']))]]
+        reply_markup = telegram.InlineKeyboardMarkup(keyboard)
+        update.message.reply_text(
+            str(idx) + ') ' + model['title']['fa'],
+            reply_markup=reply_markup
+        )
     return REQ
 
 
