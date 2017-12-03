@@ -17,8 +17,9 @@ bot.
 '503798742:AAHzfg7uqG8z6RU1p0C3ktRf0uPO2FNMb4Q'
 #contact_keyboard = telegram.KeyboardButton(text="send_contact", request_contact=True)
 """
+from auto_place import sug_place
 from search import search
-from config import ObjectId, users, pr
+from config import ObjectId, users, pr, models
 from ast import literal_eval
 import telegram
 from telegram import ReplyKeyboardMarkup
@@ -27,6 +28,7 @@ from telegram.ext import (Updater, CommandHandler, MessageHandler, CallbackQuery
 from telegram.ext import Handler
 import logging
 import datetime
+from utility import check_price
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -46,7 +48,7 @@ markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyb
 
 
 def start(bot, update, user_data):
-    user_data['query'] = []
+    user_data['wish_list'] = []
     id = update.message.chat_id
     user = users.find_one({'id': id})
     if user:
@@ -57,12 +59,6 @@ def start(bot, update, user_data):
 
 def req(bot, update, user_data):
     text = update.message.text
-    if not text:
-        return error(bot, update, user_data)
-    user_data['query'].append(text)
-    if 'location' not in user_data:
-        user_data['redirect'] = req
-        return location_get(bot, update, user_data)
     result = search(text, 1, 5)
     for idx, model in enumerate(result):
         keyboard = [[telegram.InlineKeyboardButton(model['title']['compact'], callback_data=str(model['_id']))]]
@@ -71,11 +67,33 @@ def req(bot, update, user_data):
             str(idx) + ') ' + model['title']['fa'],
             reply_markup=reply_markup
         )
+    user_data.pop('query', None)
+    if 'state' in user_data:
+        state = user_data['state']
+        del user_data['state']
+        return state
+    return REQ
+
+
+def add_listener(bot, update, user_data):
+    if 'query' not in user_data:
+        query = update.callback_query
+        user_data['query'] = query
+        user_data['wish_list'].append(query.data)
+    if 'location' not in user_data:
+        user_data['redirect'] = add_listener
+        return location_get(bot, query, user_data)
+    query = user_data['query']
+    if 'redirect' in user_data:
+        user_data['redirect'](bot, update, user_data)
+    query.message.reply_text(
+        query.data
+    )
+    # TODO loop of pr search and optimizer.
     return REQ
 
 
 def location_get(bot, update, user_data):
-    # no inline for request_location
     location_keyboard = telegram.KeyboardButton("send_location", request_location=True)
     reply_markup = telegram.ReplyKeyboardMarkup([[location_keyboard]], one_time_keyboard=True, resize_keyboard=True)
     update.message.reply_text(
@@ -88,8 +106,43 @@ def location_get(bot, update, user_data):
 
 
 def location_post(bot, update, user_data):
-    text = update.message.text
-    location = literal_eval(str(update.message.location))
+    if 'location' in update.message:
+        location = literal_eval(str(update.message.location))
+    if 'text' in update.message:
+        text = update.message.text
+        if 'part_of_location' in user_data:
+            text += ' ' + user_data['part_of_location']
+            del user_data['part_of_location']
+        _local, _global = sug_place(text)
+        if len(_local) == 1:
+            update.message.reply_text('did u mean:' + _local[0])
+            # TODO add inline button
+            user_data['locations'] = _local
+            return LOCATION
+        if len(_local) > 1:
+            if len(_local) < 5:
+                for place in _local:
+                    update.message.reply_text(place)
+                    # TODO add inline button
+                    user_data['locations'] = _local
+                    return LOCATION
+            else:
+                update.message.reply_text('complete it')
+                user_data['part_of_location'] = text
+                return LOCATION
+        if _global:
+            update.message.reply_text('complete it')
+            user_data['part_of_location'] = text
+            return LOCATION
+        else:
+            update.message.reply_text('wtf try again insert a place')
+            return LOCATION
+    else:
+        query = update.callback_query
+        locations = user_data['locations']
+        location = locations[int(query.data)]
+        location = location['location']
+
     # text # complete with google api > get lat lang
     # {'longitude': 51.31218, 'latitude': 35.722753}
     user_data['location'] = location
@@ -107,6 +160,7 @@ def push_model_get(bot, update, user_data):
         user_data['redirect'] = push_model_get
         return contact_get(bot, update, user_data)
     update.message.reply_text('insert model or you can type @denwabot ')
+    user_data['state'] = PUSH_MODEL
     return PUSH_MODEL
 
 
@@ -133,8 +187,8 @@ def contact_push(bot, update, user_data):
 
 
 def push_model_post(bot, update, user_data):
-    text = update.message.text
-    user_data['model'] = text
+    query = update.callback_query
+    user_data['model'] = query.data
     update.message.reply_text(
         'now give us your price'
         'please make sure your price is correct'
@@ -151,10 +205,16 @@ def push_price(bot, update, user_data):
     if 'model' not in user_data:
         update.message.reply_text('so where the hell your model gone')
         return push_model_get(bot, update, user_data)
+    model = models.find_one({'_id': user_data['model']})
+    price_validity, message = check_price(text, model['price'])
+    if not price_validity:
+        update.message.reply_text(message)
+        return PUSH_PRICE
+    update.message.reply_text(message)
     data = {
         '_author': update.message.chat_id,
         '_date': datetime.datetime.now(),
-        'model': user_data['model'],
+        'model': model,
         'price': text,
         'location': user_data['location'],
         'contact': user_data['contact'],
@@ -322,11 +382,13 @@ def main():
         states={
             REQ: [
                 *commands,
-                MessageHandler(Filters.text, req, pass_user_data=True)
+                MessageHandler(Filters.text, req, pass_user_data=True),
+                CallbackQueryHandler(add_listener, pass_user_data=True),
             ],
             PUSH_MODEL: [
                 *commands,
-                MessageHandler(Filters.text, push_model_post, pass_user_data=True)
+                MessageHandler(Filters.text, req, pass_user_data=True),
+                CallbackQueryHandler(push_model_post, pass_user_data=True),
             ],
             PUSH_PRICE: [
                 *commands,
@@ -339,6 +401,7 @@ def main():
             LOCATION: [
                 *commands,
                 MessageHandler(Filters.location | Filters.text, location_post, pass_user_data=True),
+                CallbackQueryHandler(location_post, pass_user_data=True),
             ],
             MY: [
                 *commands,

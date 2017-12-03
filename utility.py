@@ -84,11 +84,23 @@ def letterize(n):
     else:
         return '{head} {_}{tail}'.format(head=letterize(n[:-1] + '0'), _=_, tail=letterize(n[-1:]))
 
-print(letterize('1'))
-print(letterize('11'))
-print(letterize('21'))
-print(letterize('102'))
-print(letterize('192'))
-print(letterize('1092'))
-print(letterize('1700'))
-print(letterize('3333'))
+
+def check_price(new, old):
+    if old == '':
+        return True, 'we our data is not complete so we just trust u'
+    try:
+        new = en(new)
+        old = en(old)
+    except Exception:
+        return False, 'format error try again give me another number'
+    messages = [
+        (.3, False, 'do u know the format'),
+        (.5, False, 'are u kidding give me another price'),
+        (.9, True, 'wow amazing if i have money i will buy it'),
+        (1.1, True, "it is to much u moron u don't have any chance to sell your shit"),
+        (1.5, False, 'are u kidding give me another price'),
+        (float('inf'), False, 'do u know the format')
+    ]
+    for m in messages:
+        if m[0] * old > new:
+            return m[1:3]

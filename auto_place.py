@@ -1,6 +1,19 @@
 import json
 import requests
 api_url = 'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+detail_url = 'https://maps.googleapis.com/maps/api/place/details/json'
+
+
+def complete_information(place):
+    parameters = {
+        'key': 'AIzaSyBOT_LUhiW6ckODDTRMXvptoMBuipKLVFM',
+        'placeid': place['placeid'],
+    }
+    _json = requests.get(api_url, params=parameters).content
+    _json = _json.decode('utf-8')
+    _json = json.loads(_json)
+    place['location'] = _json.geometry.location
+    return place
 
 
 def filter_places(predictions, filters, place_id=False):
@@ -9,11 +22,10 @@ def filter_places(predictions, filters, place_id=False):
         for f in filters:
             if set(p).issuperset(f):
                 _.append(p)
-
     return _
 
-def sug(query):
 
+def sug_place(query):
     parameters = {
         'key': 'AIzaSyBOT_LUhiW6ckODDTRMXvptoMBuipKLVFM',
         'input': 'نقش جهان',
@@ -41,11 +53,3 @@ def sug(query):
         return filter_places(_json['predictions'], _local, place_id=True), filter_places(_json['predictions'], _global)
     print('network error')
     return [], []
-
-# do ta array doros mikonim yeki type hayee ke kolii an yeki type haayee ke jozee an
-# age jozee yeki bud > [yes, no]
-# age jozee chanta dasht va chantash kam bud > [items]
-# age jozee hash kheili bud > complete it +
-# else age koli dasht > complete it +
-# jozE nadarim koli nadarim wtf try again
-#"ZERO_RESULTS" > wtf try again
